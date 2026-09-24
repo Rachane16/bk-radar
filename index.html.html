@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Thai Rain Radar & Weather Live Dashboard</title>
+
+  <!-- Google Font: Prompt -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-dark: #0369a1;
+      --bg-glass: #171f2c; /* สีพื้นหลังกล่องหลัก ให้เหมือนรูป */
+      --card-bg: #1e293b; /* สีพื้นหลัง Card ย่อย */
+      --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      --radius: 14px;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; font-family: 'Prompt', sans-serif; }
+    body { margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; display: flex; background: #0f172a; }
+    #map { flex: 1; height: 100%; width: 100%; z-index: 1; }
+
+    /* Floating Panel UI */
+    .dashboard-panel {
+      position: absolute; top: 16px; left: 16px; z-index: 1000;
+      width: 380px; max-height: calc(100vh - 32px);
+      background: var(--bg-glass); 
+      border-radius: var(--radius); box-shadow: var(--card-shadow);
+      padding: 16px; display: flex; flex-direction: column; gap: 14px;
+      overflow-y: auto; color: var(--text-main);
+    }
+    
+    /* Scrollbar สำหรับ Webkit (Chrome, Safari) */
+    .dashboard-panel::-webkit-scrollbar { width: 6px; }
+    .dashboard-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+
+    /* Brand Header */
+    .brand-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+    .icon-logo { 
+      width: 42px; height: 42px; 
+      background: linear-gradient(135deg, #3b82f6, #2563eb); 
+      color: #fff; display: flex; align-items: center; justify-content: center; 
+      border-radius: 10px; font-size: 20px; 
+    }
+    .brand-header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; line-height: 1.2; }
+    .brand-header p { margin: 2px 0 0; font-size: 0.7rem; color: var(--text-muted); }
+
+    /* City Chips */
+    .city-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+    .city-chip { 
+      font-size: 0.7rem; padding: 4px 12px; 
+      background: #2b3543; border-radius: 16px; color: #cbd5e1; 
+      cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.05); 
+      transition: all 0.15s ease; 
+    }
+    .city-chip:hover { background: #334155; color: #fff; border-color: #475569; }
+
+    /* Cards */
+    .card { 
+      background: var(--card-bg); border-radius: 12px; padding: 14px; 
+      border: 1px solid rgba(255, 255, 255, 0.05); 
+    }
+
+    /* Weather Card */
+    .weather-location { font-size: 0.8rem; font-weight: 600; color: #38bdf8; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+    .weather-main { display: flex; justify-content: space-between; align-items: center; }
+    .weather-temp { font-size: 2.8rem; font-weight: 700; line-height: 1.1; letter-spacing: -1px; }
+    .weather-condition { font-size: 0.8rem; color: #94a3b8; }
+    #weather-icon { font-size: 3rem; color: #38bdf8; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
+    
+    .weather-details-grid { 
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; 
+      margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(255, 255, 255, 0.1); 
+      font-size: 0.75rem; color: var(--text-muted); 
+    }
+    .weather-details-grid div { display: flex; align-items: center; gap: 6px; }
+
+    /* Daily Forecast Horizontal Scroll */
+    .forecast-title { font-size: 0.75rem; color: var(--text-muted); margin: 12px 0 8px 0; }
+    .daily-forecast { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+    .daily-forecast::-webkit-scrollbar { height: 4px; }
+    .daily-forecast::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+    .day-item { 
+      min-width: 65px; background: #171f2c; border-radius: 8px; 
+      padding: 10px 8px; text-align: center; border: 1px solid rgba(255,255,255,0.03); 
+    }
+    .day-name { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; }
+    .day-icon { font-size: 1.2rem; color: #38bdf8; margin-bottom: 4px; }
+    .day-temp { font-size: 0.85rem; font-weight: 600; line-height: 1; }
+    .day-temp span { font-size: 0.65rem; color: #64748b; font-weight: 400; }
+    .day-pop { font-size: 0.65rem; color: #60a5fa; margin-top: 6px; display: flex; align-items: center; justify-content: center; gap: 3px; }
+
+    /* Radar Controls Card */
+    .radar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .radar-title { font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .timestamp-badge { background: #0284c7; color: #fff; padding: 2px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; }
+    
+    .timeline-slider { width: 100%; margin: 8px 0; accent-color: #38bdf8; cursor: pointer; }
+    
+    .btn-action-group { display: flex; gap: 8px; margin: 12px 0; }
+    .btn { 
+      flex: 1; padding: 8px 0; font-size: 0.85rem; font-weight: 600; border: none; border-radius: 8px; 
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; 
+      transition: all 0.2s ease; color: #fff;
+    }
+    .btn-primary { background: #0284c7; }
+    .btn-primary:hover { background: #0369a1; }
+    .btn-secondary { background: #334155; }
+    .btn-secondary:hover { background: #475569; }
+
+    /* Horizontal Radar Legend (Matching image_7272bd) */
+    .legend-title { font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; margin-bottom: 4px; }
+    .radar-legend { 
+      height: 6px; width: 100%; border-radius: 3px; 
+      /* ไล่สีจากฟ้า -> เขียว -> เหลือง -> ส้ม -> แดง -> ชมพู ตามรูปเป๊ะ */
+      background: linear-gradient(to right, rgba(255,255,255,0.2) 0%, #38bdf8 15%, #00ff00 40%, #ffff00 60%, #ff8000 75%, #ff0000 90%, #ff00ff 100%); 
+    }
+    .legend-labels { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--text-muted); margin-top: 4px; }
+
+    /* Layers Card */
+    .card-title { font-size: 0.9rem; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+    
+    .basemap-selector { margin-bottom: 12px; }
+    .basemap-selector label { display: block; font-size: 0.75rem; color: #cbd5e1; margin-bottom: 4px; }
+    .basemap-selector select { 
+      width: 100%; padding: 8px; border-radius: 6px; 
+      background: #0f172a; color: white; border: 1px solid rgba(255,255,255,0.1); 
+      font-family: 'Prompt'; font-size: 0.8rem; outline: none;
+    }
+
+    .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 0.8rem; font-weight: 500; }
+    .toggle-row small { display: block; font-size: 0.65rem; color: #64748b; font-weight: 400; line-height: 1.2; }
+    
+    /* Toggle Switch (Grey/White style from image_7275c2) */
+    .switch { position: relative; display: inline-block; width: 34px; height: 18px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #475569; transition: .3s; border-radius: 34px; }
+    .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 2px; bottom: 2px; background-color: white; transition: .3s; border-radius: 50%; }
+    input:checked + .slider { background-color: #38bdf8; }
+    input:checked + .slider:before { transform: translateX(16px); }
+
+    /* Developer Credit matching image_726f03.png */
+    .dev-credit { display: flex; align-items: center; gap: 12px; background: var(--card-bg); border-radius: 12px; padding: 10px 14px; border: 1px solid rgba(255,255,255,0.05); }
+    .dev-logo { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; background: #fee2e2; padding: 2px; }
+    .dev-text-group { display: flex; flex-direction: column; justify-content: center; }
+    .dev-label { font-size: 0.65rem; color: #94a3b8; line-height: 1; margin-bottom: 2px; }
+    .dev-name { font-size: 0.9rem; font-weight: 600; color: #fff; line-height: 1; }
+
+    #loading-indicator { font-size: 0.7rem; color: #fbbf24; font-weight: normal; margin-left: auto; display: none; }
+    .footer-text { font-size: 0.65rem; color: #475569; text-align: center; margin-top: 4px; }
+
+    @media (max-width: 600px) {
+      .dashboard-panel { width: calc(100vw - 32px); max-height: 55vh; top: auto; bottom: 16px; padding: 14px; gap: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Fullscreen Map Canvas -->
+  <div id="map"></div>
+
+  <!-- Modern Floating Control Panel -->
+  <div class="dashboard-panel">
+    
+    <div class="brand-header">
+      <div class="icon-logo"><i class="fa-solid fa-mountain-sun"></i></div>
+      <div>
+        <h1>ระบบติดตามเรดาร์ฝน</h1>
+        <p>Terrain Satellite & Live Rain Radar</p>
+      </div>
+    </div>
+
+    <div class="city-chips">
+      <span class="city-chip" onclick="flyToLocation(13.7563, 100.5018, 'กรุงเทพมหานคร')">กรุงเทพฯ</span>
+      <span class="city-chip" onclick="flyToLocation(18.7883, 98.9853, 'เชียงใหม่')">เชียงใหม่</span>
+      <span class="city-chip" onclick="flyToLocation(16.4419, 102.8359, 'ขอนแก่น')">ขอนแก่น</span>
+      <span class="city-chip" onclick="flyToLocation(7.0084, 100.4767, 'หาดใหญ่')">หาดใหญ่</span>
+      <span class="city-chip" onclick="flyToLocation(12.6814, 101.2816, 'ระยอง')">ระยอง</span>
+    </div>
+
+    <!-- Weather Information Box & Forecast -->
+    <div class="card">
+      <div class="weather-location" id="weather-loc">
+        <i class="fa-solid fa-location-dot"></i> กำลังหาตำแหน่ง...
+      </div>
+      <div class="weather-main">
+        <div>
+          <div class="weather-temp" id="weather-temp">--°C</div>
+          <div class="weather-condition" id="weather-condition">กำลังโหลดสภาพอากาศ...</div>
+        </div>
+        <div id="weather-icon">
+          <i class="fa-solid fa-cloud-sun"></i>
+        </div>
+      </div>
+
+      <div class="weather-details-grid">
+        <div><i class="fa-solid fa-droplet" style="color: #38bdf8;"></i> ชื้น: <span id="weather-humidity">--%</span></div>
+        <div><i class="fa-solid fa-wind" style="color: #cbd5e1;"></i> ลม: <span id="weather-wind">-- กม./ชม.</span></div>
+        <div><i class="fa-solid fa-cloud-rain" style="color: #60a5fa;"></i> ฝนสะสม: <span id="weather-rain">-- มม.</span></div>
+        <div><i class="fa-solid fa-gauge" style="color: #f59e0b;"></i> ความกด: <span id="weather-pressure">-- hPa</span></div>
+      </div>
+
+      <!-- 7 Days Forecast -->
+      <div class="forecast-title">พยากรณ์ล่วงหน้า 7 วัน (โอกาสเกิดฝน)</div>
+      <div class="daily-forecast" id="daily-forecast-container">
+        <!-- JS Will Populate This -->
+      </div>
+    </div>
+
+    <!-- RainViewer Radar Control Box -->
+    <div class="card">
+      <div class="radar-header">
+        <span class="radar-title"><i class="fa-solid fa-satellite-dish"></i> เรดาร์ตรวจจับฝน</span>
+        <span class="timestamp-badge" id="radar-time">--:--</span>
+      </div>
+
+      <input type="range" class="timeline-slider" id="radar-slider" min="0" max="0" value="0" step="1" oninput="onSliderMove(this.value)">
+
+      <div class="btn-action-group">
+        <button class="btn btn-primary" id="play-btn" onclick="togglePlay()">
+          <i class="fa-solid fa-play"></i> เล่นลูปภาพ
+        </button>
+        <button class="btn btn-secondary" onclick="getUserGPS()">
+          <i class="fa-solid fa-crosshairs"></i> ตำแหน่งฉัน
+        </button>
+      </div>
+
+      <div class="legend-title">ระดับความแรงกลุ่มฝน (dBZ)</div>
+      <div class="radar-legend"></div>
+      <div class="legend-labels">
+        <span>เบาบาง</span>
+        <span>ปานกลาง</span>
+        <span>ตกหนัก</span>
+        <span>หนักมาก</span>
+      </div>
+    </div>
+
+    <!-- Map Layers & Overpass API -->
+    <div class="card">
+      <div class="card-title">
+        <i class="fa-solid fa-layer-group"></i> เลเยอร์แผนที่ & ขอบเขต 
+        <span id="loading-indicator"><i class="fa-solid fa-circle-notch fa-spin"></i> โหลดข้อมูล...</span>
+      </div>
+      
+      <div class="basemap-selector">
+        <label for="basemap-select">แผนที่ฐาน (Base Map):</label>
+        <select id="basemap-select" onchange="changeBaseMap(this.value)">
+          <option value="satellite">ESRI World Imagery (Satellite/Terrain)</option>
+          <option value="topo">OpenTopoMap (Topo)</option>
+        </select>
+      </div>
+
+      <div class="toggle-row">
+        <div>ขอบเขตจังหวัด (Province)</div>
+        <label class="switch"><input type="checkbox" id="toggle-4" onchange="toggleOverpassLayer(4, this)"><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div>ขอบเขตอำเภอ (District) <br><small>*ซูมระดับ 8 ขึ้นไป</small></div>
+        <label class="switch"><input type="checkbox" id="toggle-6" onchange="toggleOverpassLayer(6, this)"><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div style="margin-bottom:0;">ขอบเขตตำบล (Subdistrict) <br><small>*ซูมระดับ 11 ขึ้นไป</small></div>
+        <label class="switch"><input type="checkbox" id="toggle-8" onchange="toggleOverpassLayer(8, this)"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <!-- Developer Credit -->
+    <div class="dev-credit">
+      <img src="https://dl.dropbox.com/scl/fi/nx2b6zyo5cp4hwgtit12b/22-11-66-01-33-23.png?rlkey=khnfawin5mmaxg1vxq5l7nro3&dl=1" alt="RM Logo" class="dev-logo">
+      <div class="dev-text-group">
+        <span class="dev-label">พัฒนาโดย</span>
+        <span class="dev-name">RM</span>
+      </div>
+    </div>
+
+    <div class="footer-text">
+      Base Map: ESRI World Imagery | Radar: RainViewer API
+    </div>
+
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- ไลบรารีแปลง OSM JSON เป็น GeoJSON -->
+  <script src="https://unpkg.com/osmtogeojson@3.2.5/osmtogeojson.js"></script>
+
+  <script>
+    // 1. Map Setup
+    const map = L.map('map', { zoomControl: false }).setView([13.7367, 100.5231], 6);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    // Base Maps
+    const baseMaps = {
+      satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '&copy; Esri', maxZoom: 18
+      }),
+      topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)', maxZoom: 17
+      })
+    };
+    
+    // Boundary Layer for Satellite
+    const referenceLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 18, zIndex: 5
+    });
+
+    // เริ่มต้นใช้ Satellite
+    baseMaps['satellite'].addTo(map);
+    referenceLayer.addTo(map);
+    let currentBaseMap = 'satellite';
+
+    function changeBaseMap(type) {
+      map.removeLayer(baseMaps[currentBaseMap]);
+      if(currentBaseMap === 'satellite') map.removeLayer(referenceLayer);
+      
+      baseMaps[type].addTo(map);
+      if(type === 'satellite') referenceLayer.addTo(map);
+      currentBaseMap = type;
+      updateOverpassStyle(type);
+    }
+
+    // 2. OVERPASS API (Dynamic Boundaries)
+    const adminLayers = { 4: L.layerGroup().addTo(map), 6: L.layerGroup().addTo(map), 8: L.layerGroup().addTo(map) };
+    const activeLayers = { 4: false, 6: false, 8: false };
+    
+    let layerStyles = {
+      4: { color: '#ffffff', weight: 2, fillOpacity: 0.05, dashArray: '5 5' }, 
+      6: { color: '#facc15', weight: 1.5, fillOpacity: 0.02, dashArray: '3 3' }, 
+      8: { color: '#38bdf8', weight: 1, fillOpacity: 0.01, dashArray: '2 4' }  
+    };
+
+    function updateOverpassStyle(mapType) {
+      if(mapType === 'topo') {
+        layerStyles[4].color = '#ef4444'; layerStyles[6].color = '#d97706'; layerStyles[8].color = '#3b82f6'; 
+      } else {
+        layerStyles[4].color = '#ffffff'; layerStyles[6].color = '#facc15'; layerStyles[8].color = '#38bdf8'; 
+      }
+      [4, 6, 8].forEach(level => {
+        if (activeLayers[level]) adminLayers[level].eachLayer(layer => layer.setStyle(layerStyles[level]));
+      });
+    }
+
+    function toggleOverpassLayer(level, element) {
+      activeLayers[level] = element.checked;
+      if (element.checked) fetchOverpassData(level);
+      else adminLayers[level].clearLayers();
+    }
+
+    map.on('moveend', () => { [4, 6, 8].forEach(level => { if (activeLayers[level]) fetchOverpassData(level); }); });
+
+    async function fetchOverpassData(level) {
+      const zoom = map.getZoom();
+      if (level === 6 && zoom < 8) { adminLayers[6].clearLayers(); return; }
+      if (level === 8 && zoom < 11) { adminLayers[8].clearLayers(); return; }
+
+      const bounds = map.getBounds();
+      const bbox = `${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()}`;
+      const query = `[out:json][timeout:25];relation["boundary"="administrative"]["admin_level"="${level}"](${bbox});out geom;`;
+
+      document.getElementById('loading-indicator').style.display = 'inline-block';
+      try {
+        const response = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
+        const data = await response.json();
+        const geojson = osmtogeojson(data);
+        adminLayers[level].clearLayers();
+        L.geoJSON(geojson, { style: layerStyles[level], interactive: false }).addTo(adminLayers[level]);
+      } catch (error) { console.error(error); } 
+      finally { document.getElementById('loading-indicator').style.display = 'none'; }
+    }
+
+    // 3. WEATHER API (Open-Meteo Current + Daily)
+    let userMarker = null;
+
+    async function fetchWeatherData(lat, lng, placeName = 'ตำแหน่งของคุณ') {
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,precipitation,surface_pressure,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FBangkok`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const cur = data.current;
+        
+        document.getElementById('weather-loc').innerHTML = `<i class="fa-solid fa-location-dot"></i> ${placeName}`;
+        document.getElementById('weather-temp').innerText = `${Math.round(cur.temperature_2m)}°C`;
+        document.getElementById('weather-humidity').innerText = `${cur.relative_humidity_2m}%`;
+        document.getElementById('weather-wind').innerText = `${cur.wind_speed_10m} กม./ชม.`;
+        document.getElementById('weather-rain').innerText = `${cur.precipitation} มม.`;
+        document.getElementById('weather-pressure').innerText = `${Math.round(cur.surface_pressure)} hPa`;
+        
+        const currentW = parseWMO(cur.weather_code);
+        document.getElementById('weather-condition').innerText = currentW.text;
+        document.getElementById('weather-icon').innerHTML = `<i class="${currentW.icon}"></i>`;
+
+        // 7 Days Forecast
+        const dailyContainer = document.getElementById('daily-forecast-container');
+        dailyContainer.innerHTML = ''; 
+        data.daily.time.forEach((dateStr, index) => {
+          const dayName = index === 0 ? 'วันนี้' : new Date(dateStr).toLocaleDateString('th-TH', { weekday: 'long' });
+          const maxTemp = Math.round(data.daily.temperature_2m_max[index]);
+          const minTemp = Math.round(data.daily.temperature_2m_min[index]);
+          const pop = data.daily.precipitation_probability_max[index]; 
+          const wCode = parseWMO(data.daily.weather_code[index]);
+
+          dailyContainer.innerHTML += `
+            <div class="day-item">
+              <div class="day-name">${dayName}</div>
+              <div class="day-icon"><i class="${wCode.icon}"></i></div>
+              <div class="day-temp">${maxTemp}°<span>/${minTemp}°</span></div>
+              <div class="day-pop"><i class="fa-solid fa-droplet"></i> ${pop}%</div>
+            </div>
+          `;
+        });
+        
+        if (userMarker) map.removeLayer(userMarker);
+        userMarker = L.marker([lat, lng]).addTo(map).bindPopup(`<b>${placeName}</b>`).openPopup();
+
+      } catch (err) { console.error('Weather API Error:', err); }
+    }
+
+    function parseWMO(code) {
+      if (code === 0) return { text: 'ท้องฟ้าแจ่มใส', icon: 'fa-solid fa-sun' };
+      if (code >= 1 && code <= 3) return { text: 'มีเมฆบางส่วน', icon: 'fa-solid fa-cloud-sun' };
+      if (code >= 51 && code <= 55) return { text: 'ฝนปรอยๆ', icon: 'fa-solid fa-cloud-rain' };
+      if (code >= 61 && code <= 65) return { text: 'มีฝนตก', icon: 'fa-solid fa-cloud-showers-heavy' };
+      if (code >= 80 && code <= 82) return { text: 'ฝนกระจาย', icon: 'fa-solid fa-cloud-showers-water' };
+      if (code >= 95) return { text: 'พายุฟ้าคะนอง', icon: 'fa-solid fa-bolt' };
+      return { text: 'ปกติ', icon: 'fa-solid fa-cloud' };
+    }
+
+    map.on('click', (e) => fetchWeatherData(e.latlng.lat, e.latlng.lng, `พิกัด: ${e.latlng.lat.toFixed(2)}, ${e.latlng.lng.toFixed(2)}`));
+    function flyToLocation(lat, lng, name) { map.flyTo([lat, lng], 10, { duration: 1.2 }); fetchWeatherData(lat, lng, name); }
+
+    // 4. GPS Location
+    function getUserGPS() {
+      if (navigator.geolocation) {
+        document.getElementById('weather-loc').innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังหาตำแหน่ง...`;
+        navigator.geolocation.getCurrentPosition(
+          (pos) => { flyToLocation(pos.coords.latitude, pos.coords.longitude, 'ตำแหน่งของคุณ'); },
+          () => { alert('ไม่สามารถเข้าถึงตำแหน่งได้'); fetchWeatherData(13.7563, 100.5018, 'กรุงเทพมหานคร'); }
+        );
+      } else { fetchWeatherData(13.7563, 100.5018, 'กรุงเทพมหานคร'); }
+    }
+
+    // 5. RADAR API (RainViewer)
+    let radarLayers = [], radarTimestamps = [], currentIndex = 0;
+    let playInterval = null; let isPlaying = false;
+    
+    async function initRadar() {
+      try {
+        const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+        const data = await response.json();
+        const frames = [...(data.radar.past || []), ...(data.radar.nowcast || [])];
+        
+        radarTimestamps = frames.map(f => f.time);
+        frames.forEach((frame) => {
+          const layerUrl = `${data.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`; // ใช้ Color Scheme 2 (เข้ากับ Legend แนวนอน)
+          const layer = L.tileLayer(layerUrl, { tileSize: 256, opacity: 0, zIndex: 10 }).addTo(map);
+          radarLayers.push(layer);
+        });
+
+        document.getElementById('radar-slider').max = radarLayers.length - 1;
+        // โชว์ภาพล่าสุด
+        onSliderMove(radarLayers.length - 1);
+      } catch (err) { console.error('Radar Error'); }
+    }
+
+    function onSliderMove(val) {
+      if (isPlaying && event && event.type === 'input') togglePlay();
+      currentIndex = parseInt(val, 10);
+      radarLayers.forEach((layer, i) => layer.setOpacity(i === currentIndex ? 0.8 : 0));
+      if (radarTimestamps[currentIndex]) {
+        const date = new Date(radarTimestamps[currentIndex] * 1000);
+        document.getElementById('radar-time').innerText = date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+      }
+      document.getElementById('radar-slider').value = currentIndex;
+    }
+
+    function togglePlay() {
+      const btn = document.getElementById('play-btn');
+      if (isPlaying) {
+        clearInterval(playInterval);
+        btn.innerHTML = '<i class="fa-solid fa-play"></i> เล่นลูปภาพ';
+        isPlaying = false;
+      } else {
+        btn.innerHTML = '<i class="fa-solid fa-pause"></i> หยุด';
+        isPlaying = true;
+        playInterval = setInterval(() => {
+          currentIndex = (currentIndex + 1) % radarLayers.length;
+          onSliderMove(currentIndex);
+          isPlaying = true;
+        }, 550);
+      }
+    }
+
+    // เริ่มต้นทำงาน (ดึงพิกัด + โหลดเรดาร์ภาพล่าสุดทันที)
+    initRadar();
+    getUserGPS();
+  </script>
+</body>
+</html>
